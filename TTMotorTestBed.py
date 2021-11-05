@@ -19,7 +19,6 @@ from machine import ADC
 from machine import Pin
 from machine import PWM
 
-#import machine
 import utime
 
 # The emergency exception buffer is for use is any Exceptions are thrown.  This provides pre-allocated space
@@ -135,13 +134,13 @@ def buttonDebounce( pin: Pin ):
     return curr_value
     # End of buttonDebounce()
   
-# Button Interrupt Handler
+# Button Interrupt Handler for Rising Signal Detected
 #
 # After allowing the button to stablize [see buttonDebounce()], the
 # value of the pin is checked.  If the pin is HIGH, the button changed
 # flag is set to True.  If the stable button is LOW, the button changed
 # flag is set to False.
-def buttonHandler(pin):
+def buttonPressedHandler(pin):
     global  buttons
 
     # Let the button stablize before reading its value.
@@ -151,15 +150,49 @@ def buttonHandler(pin):
     # change flag to True if the button/pin is HIGH.
     pinID    = whichPWM(pin)
 
+    if ( pinID < 0 ):
+        # Unknown Pin cased the interrupt.  Cannot process this interrupt - IGNORE IT
+        return
+
     if ( pinValue > 0 ):
-        buttons[pinID].setChange(True)
-        valueStr = "HIGH"
-    else:
-        buttons[pinID].setChange(False)
-        valueStr = "LOW"
+        # If Busy, we are already processing an interrupt for this pin on a single
+        # button press.  Do not process another one until the button is released.
+        if ( not buttons[pinID].isBusy() ):
+            buttons[pinID].setChange(True)
+            buttons[pinID].setBusy( flag=True )
+        #valueStr = "HIGH"  # for debug print statement below
+   
+    # NOTE: The change flag is cleared in the main loop and the busy flag is
+    #       cleared in another interrupt handler
 
     #print("Button Handler: Button: ", str(pin), ", Value: ", valueStr)
+    return
     # End of buttonHandler()
+
+# Button Interrupt Handler for Falling Signal Detected
+def buttonReleasedHandler( pin ):
+    global  buttons
+
+    # Let the button stablize before determining if the button was actually released
+    pinValue = buttonDebounce(pin)
+
+    # Determine which pin triggered the interrupt
+    pinID = whichPWM(pin)
+
+    if ( pinID < 0 ):
+        # Unknown Pin cased the interrupt.  Cannot process this interrupt - IGNORE IT
+        return
+
+    # Only deal with falling signal interrupts, these are the ones where the final
+    # pin value is LOW (or zero)
+    if ( pinValue < 1 ):
+        # We do not care if multiple interrupts occur when the button is released
+        # so we are skipping checking to see if the button is Busy.
+        buttons[pinID].setBusy(flag=False)
+
+    return
+    # end of buttonReleasedHandler
+
 
 # Determine if the first value is equal to the second value +/- delta
 #
@@ -176,8 +209,11 @@ def closeEnough(value1, value2, delta):
     
 # Setting up Interrup Handlers
 #print("Initializing Button Interrupt Handlers")
-pinButtonA.irq(handler=buttonHandler, trigger=Pin.IRQ_RISING)
-pinButtonB.irq(handler=buttonHandler, trigger=Pin.IRQ_RISING)
+pinButtonA.irq(handler=buttonPressedHandler, trigger=Pin.IRQ_RISING)
+pinButtonB.irq(handler=buttonPressedHandler, trigger=Pin.IRQ_RISING)
+
+pinButtonA.irq(handler=buttonReleasedHandler, trigger=Pin.IRQ_FALLING)
+pinButtonB.irq(handler=buttonReleasedHandler, trigger=Pin.IRQ_FALLING)
 
 print("Starting Infinite Loop")
 
