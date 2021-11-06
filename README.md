@@ -96,12 +96,11 @@ interrupt occurs and when it is handled.  Disabling new interrupts during the pr
 the extra interrupts have already occurred.
 
 The debounce function handles most of the cases of multiple interrupts.  The one exception is if the button is held down for a long enough period
-of time.  In this case, the interrupt handler processes the first interrupt and the pin value is HIGH.  When the second interrupt occurs, the
-interrupt handler finds that the button value is still HIGH and treats it as a new interrupt.  This case is not resolved in the code and can
-occur.  Therefore, when a button is pressed, the motor may jump ahead multiple toggled directions.  For a simple test, I did not feel it
-was necessary to resolve this case.  If could be done by adding a second interrupt handler for the two buttons that is triggered by the
-falling signal and have the rising signal handler ignore any additional interrupts until the falling signal interrupt occurs after a rising
-signal interrupt.
+of time and multiple interrupts are queued for processing.  In this case, the interrupt handler processes the first interrupt and the pin value is HIGH.  When 
+the second interrupt is handled, the interrupt handler finds that the button value is still HIGH and treats it as a new interrupt.  This case is 
+resolved in the code by requiring a second interrupt that detects the release of the button.  Only one rising interrupt will be processed until a
+matching falling interrupt is detected.  So if there are multiple rising or button pressed interrupts detected, all secondary interrupts are ignored 
+until the button is released and the falling interrupt is detected.
 
 * [See Interrupt Handling Problem in Pico -- Raspberry Pi Forums](https://forums.raspberrypi.com/viewtopic.php?t=319655) for more details.
 
