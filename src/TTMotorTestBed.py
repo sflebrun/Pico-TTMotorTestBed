@@ -30,7 +30,7 @@ from TTMotor      import TTMotor
 from MotorControl import MotorControl
 from ButtonInfo   import ButtonInfo
 
-#print("Running TTMotorTest2 --")
+print("Running TTMotorTestBed --")
 
 ## Defining GPIO Pins used 
 
@@ -134,65 +134,56 @@ def buttonDebounce( pin: Pin ):
     return curr_value
     # End of buttonDebounce()
   
-# Button Interrupt Handler for Rising Signal Detected
+
+# Interrupt Handler for all Button Events: Being Pressed (Rising Signal) and
+# Being Released (Falling Signal)
 #
-# After allowing the button to stablize [see buttonDebounce()], the
-# value of the pin is checked.  If the pin is HIGH, the button changed
-# flag is set to True.  If the stable button is LOW, the button changed
-# flag is set to False.
-def buttonPressedHandler(pin):
-    global  buttons
-
-    # Let the button stablize before reading its value.
-    pinValue = buttonDebounce(pin)
-
-    # Determine the Button/Pin current value and set the
-    # change flag to True if the button/pin is HIGH.
-    pinID    = whichPWM(pin)
-
-    if ( pinID < 0 ):
-        # Unknown Pin cased the interrupt.  Cannot process this interrupt - IGNORE IT
-        return
-
-    if ( pinValue > 0 ):
-        # If Busy, we are already processing an interrupt for this pin on a single
-        # button press.  Do not process another one until the button is released.
-        if ( not buttons[pinID].isBusy() ):
-            buttons[pinID].setChange(True)
-            buttons[pinID].setBusy( flag=True )
-        #valueStr = "HIGH"  # for debug print statement below
-   
-    # NOTE: The change flag is cleared in the main loop and the busy flag is
-    #       cleared in another interrupt handler
-
-    #print("Button Handler: Button: ", str(pin), ", Value: ", valueStr)
-    return
-    # End of buttonHandler()
-
-# Button Interrupt Handler for Falling Signal Detected
-def buttonReleasedHandler( pin ):
-    global  buttons
+# The handler determines which event occurred by the value of the Button Pin
+# after it has stablized in the buttonDebounce() method.
+#
+# If the Button Pin is HIGH, the button has been pressed.  If this is the first
+# occurance of this type of event for a single button push, the Change flag is set
+# to True as well as the Busy flag is set to True.  If this is not the first occurance,
+# as determined by the Busy flag, then the interrupt is ignored and nothing happens.
+#
+# If the Button Pin is LOW, the button has been release.  In this case, the
+# Busy flag is cleared and the next Button Pressed event will be considered
+# the first event for that pressing of the button.
+def buttonHandler(pin: Pin):
+    global buttons
 
     # Let the button stablize before determining if the button was actually released
     pinValue = buttonDebounce(pin)
 
     # Determine which pin triggered the interrupt
     pinID = whichPWM(pin)
+    
+    #print("Button Interrupt: Pin: ", str(pin), ", PWM Pin ID: ", pinID, ", Button Value: ", pinValue)
+
 
     if ( pinID < 0 ):
         # Unknown Pin cased the interrupt.  Cannot process this interrupt - IGNORE IT
         return
-
-    # Only deal with falling signal interrupts, these are the ones where the final
-    # pin value is LOW (or zero)
-    if ( pinValue < 1 ):
+ 
+    if ( pinValue > 0 ):
+        # Button High -- Being Pressed
+        # If Busy, we are already processing an interrupt for this pin on a single
+        # button press.  Do not process another one until the button is released.
+        if ( not buttons[pinID].isBusy() ):
+            buttons[pinID].setChange(True)
+            buttons[pinID].setBusy( flag=True )
+            valueStr = "HIGH"  # for debug print statement below
+        else:
+            valueStr = "BUSY"
+    else:
         # We do not care if multiple interrupts occur when the button is released
         # so we are skipping checking to see if the button is Busy.
         buttons[pinID].setBusy(flag=False)
-
+        valueStr = "LOW"
+   
+    #print("Button Handler: Button: ", str(pin), ", Value: ", valueStr)
     return
-    # end of buttonReleasedHandler
-
+    # End of buttonHandler()
 
 # Determine if the first value is equal to the second value +/- delta
 #
@@ -208,12 +199,20 @@ def closeEnough(value1, value2, delta):
 
     
 # Setting up Interrup Handlers
-#print("Initializing Button Interrupt Handlers")
-pinButtonA.irq(handler=buttonPressedHandler, trigger=Pin.IRQ_RISING)
-pinButtonB.irq(handler=buttonPressedHandler, trigger=Pin.IRQ_RISING)
+#
+# If multiple Interrupt Handlers are assigned to the same Pin for different
+# triggers, only the last one set will run.
+#
+# Previously, there were two interrupt handlers; one for rising signal or
+# Pressed Button events and the other for falling signal or Released Button
+# events.  These two interrupt handlers have been rewritten as a single
+# interrupt handler that handles both events.
 
-pinButtonA.irq(handler=buttonReleasedHandler, trigger=Pin.IRQ_FALLING)
-pinButtonB.irq(handler=buttonReleasedHandler, trigger=Pin.IRQ_FALLING)
+#print("Initializing Button Interrupt Handlers")
+
+pinButtonA.irq(handler=buttonHandler, trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING)
+pinButtonB.irq(handler=buttonHandler, trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING)
+
 
 print("Starting Infinite Loop")
 
@@ -232,7 +231,7 @@ while True:
     for buttonInfo in buttons.values():
         if ( buttonInfo.getChange() ):
             updateFlag = True
-            #print("Button Pushed: Pin: ", buttonInfo.pinID())
+            print("Button Pushed: Pin: ", buttonInfo.pinID())
             motorControl.toggleDirection(buttonInfo.pinID())
             buttonInfo.setChange(False) 
 
@@ -242,7 +241,7 @@ while True:
     if ( updateFlag or 
         ( not closeEnough(frontSpeed, motorA.speed(), myDelta ) ) or 
         ( not closeEnough(backSpeed, motorB.speed(), myDelta ) ) ):
-        #print("Change Speed or Direction")
+        print("Change Speed or Direction")
         motorControl.changeSpeed(frontSpeed=potA.read_u16(), backSpeed=potB.read_u16())
 
         # print("Motor A: PWM: ", motorA.pwm(), 
